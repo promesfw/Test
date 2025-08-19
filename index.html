@@ -77,7 +77,7 @@ let isSpinning = false;
 let lastTargetIndex = null;
 
 // --- === HIER: deine Google Script URL (eingetragen) ===
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbz-dSyO4xSHn8_atUtnD0LV_YA1KjicmPNsr5-aQu8Im2JV_1rurjyO3wbp3eR83S-k/exec";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzomnlmW7LR08XerTQTZg5Vfs9y8B2rcMp6QJS_Dv3Y5u2D189EI2G_Rss7nOLE0kKx/exec";
 
 // === Username-Abfrage (einmalig, minimal) ===
 if (!localStorage.getItem('gluecksrad_user')) {
@@ -280,23 +280,24 @@ function onSpinComplete(index){
   spinBtn.disabled = true;
   spinBtn.textContent = "Heute gedreht";
 
-  // Ergebnis an Google Sheets senden (optional)
-  if (SHEETS_URL && SHEETS_URL.indexOf('HIER_DEINE') === -1) {
-    try {
-      fetch(SHEETS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: today,
-          points: points,
-          user: (localStorage.getItem('gluecksrad_user') || 'anonymous'),
-          angle: lastTargetIndex
-        })
-      }).catch(err => {
-        console.warn('Sheets POST failed:', err);
-      });
-    } catch(e){ console.warn('Sheets POST exception', e); }
-  }
+ // Ergebnis an Google Sheets senden (optional)
+if (SHEETS_URL && SHEETS_URL.indexOf('HIER_DEINE') === -1) {
+  try {
+    fetch(SHEETS_URL, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({
+        date: today,
+        points: points,
+        user: (localStorage.getItem('gluecksrad_user') || 'anonymous'),
+        angle: lastTargetIndex
+      })
+    }).catch(err => {
+      console.warn('Sheets POST failed:', err);
+    });
+  } catch(e){ console.warn('Sheets POST exception', e); }
 }
 
 // --- Initialisierung / Event-Handling ---
@@ -332,3 +333,4 @@ init();
 </script>
 </body>
 </html>
+
