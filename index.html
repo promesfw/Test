@@ -54,7 +54,7 @@
    - Responsive Canvas (devicePixelRatio)
    - Zeitbasiertes Tweening + Wobble am Ende
    - Mobile-friendly
-   - Nur minimal geändert: SHEETS_URL gesetzt + Username-Prompt
+   - Setze HIER_DEINE_GOOGLE_SCRIPT_URL ein wenn du die Daten an Sheets senden willst
 */
 
 const canvas = document.getElementById('wheel');
@@ -76,23 +76,8 @@ let angle = 0;        // aktuelle Rotation (radian)
 let isSpinning = false;
 let lastTargetIndex = null;
 
-// --- === HIER: deine Google Script URL (eingetragen) ===
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbwmgFRWuMJhqWcGf7NSX-4hMGA3qYlZ0aCanCa_Mo-rQPbAaWsUp3nFQMp6MjCWrA2D/exec";
-
-// === Username-Abfrage (einmalig, minimal) ===
-if (!localStorage.getItem('gluecksrad_user')) {
-  try {
-    const name = prompt("Bitte gib deinen Namen ein (oder Abbrechen für 'anonymous'):");
-    if (name && name.trim() !== "") {
-      localStorage.setItem('gluecksrad_user', name.trim());
-    } else {
-      localStorage.setItem('gluecksrad_user', 'anonymous');
-    }
-  } catch(e) {
-    // falls prompt auf manchen Umgebungen blockiert wird
-    localStorage.setItem('gluecksrad_user', 'anonymous');
-  }
-}
+// Google Script URL - bitte hier deine Webapp-URL eintragen:
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbwmgFRWuMJhqWcGf7NSX-4hMGA3qYlZ0aCanCa_Mo-rQPbAaWsUp3nFQMp6MjCWrA2D/exec"; // leave as placeholder or fill
 
 // --- Hilfsfunktionen ---
 function shuffleArray(a){
@@ -105,11 +90,13 @@ function shuffleArray(a){
 function generateSegments(){
   // 1x +3, 2x +1, rest 0
   const arr = Array(SEG_COUNT).fill(0);
+  // Set +3
   let indices = Array.from({length:SEG_COUNT}, (_,i)=>i);
   shuffleArray(indices);
   arr[indices[0]] = 3;
   arr[indices[1]] = 1;
   arr[indices[2]] = 1;
+  // rest 0 already
   return arr.map(p => ({ points: p }));
 }
 
@@ -124,6 +111,7 @@ function easeOutCubic(t){ return 1 - Math.pow(1-t,3); }
 
 // --- Canvas setup & responsive scaling ---
 function resizeCanvas(){
+  // css size = computed width of canvas (responsive)
   const computed = Math.min(420, Math.max(240, Math.round(window.innerWidth * 0.84)));
   cssSize = computed;
   canvas.style.width = cssSize + 'px';
@@ -133,6 +121,7 @@ function resizeCanvas(){
   canvas.width = Math.round(cssSize * dpr);
   canvas.height = Math.round(cssSize * dpr);
 
+  // Set transform so we can draw in CSS pixels
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   center.x = cssSize / 2;
@@ -150,6 +139,7 @@ function drawWheel(){
 
   for(let i=0;i<SEG_COUNT;i++){
     const start = angle + i * segAngle;
+    // radial gradient
     const grad = ctx.createRadialGradient(center.x - radius*0.2, center.y - radius*0.2, radius*0.05, center.x, center.y, radius);
     const c1 = (i % 2 === 0) ? '#ffe259' : '#ffa751';
     const c2 = (i % 2 === 0) ? '#ffa751' : '#ffe259';
@@ -177,7 +167,7 @@ function drawWheel(){
     ctx.restore();
   }
 
-  // inner circle
+  // Optional: inner circle to create "mechanical" look
   ctx.beginPath();
   ctx.arc(center.x, center.y, radius*0.14, 0, 2*Math.PI);
   ctx.fillStyle = '#fff7f2';
@@ -280,27 +270,38 @@ function onSpinComplete(index){
   spinBtn.disabled = true;
   spinBtn.textContent = "Heute gedreht";
 
- // Ergebnis an Google Sheets senden (optional)
-if (SHEETS_URL && SHEETS_URL.indexOf('HIER_DEINE') === -1) {
-  try {
-    fetch(SHEETS_URL, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json' 
-      },
-      body: JSON.stringify({
-        date: today,
-        points: points,
-        user: (localStorage.getItem('gluecksrad_user') || 'anonymous'),
-        angle: lastTargetIndex
-      })
-    }).catch(err => {
-      console.warn('Sheets POST failed:', err);
-    });
-  } catch(e){ console.warn('Sheets POST exception', e); }
+  // Ergebnis an Google Sheets senden (optional)
+  if (SHEETS_URL && SHEETS_URL.indexOf('HIER_DEINE') === -1) {
+    try {
+      fetch(SHEETS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: today,
+          points: points,
+          user: (localStorage.getItem('gluecksrad_user') || 'anonymous'),
+          angle: lastTargetIndex
+        })
+      }).catch(err => {
+        // Fehler ignorieren / optional logging
+        console.warn('Sheets POST failed:', err);
+      });
+    } catch(e){ console.warn('Sheets POST exception', e); }
+  }
 }
 
 // --- Initialisierung / Event-Handling ---
+function promptForName() {
+  const storedUser = localStorage.getItem('gluecksrad_user');
+  if (!storedUser) {
+    const userName = prompt('Bitte geben Sie Ihren Namen ein, um Ihre Punkte zu speichern:');
+    if (userName) {
+      localStorage.setItem('gluecksrad_user', userName);
+      alert('Vielen Dank, ' + userName + '! Ihr Name wurde gespeichert.');
+    }
+  }
+}
+
 function restoreState(){
   const lastDate = localStorage.getItem('gluecksrad_lastSpinDate');
   const today = new Date().toISOString().slice(0,10);
@@ -315,7 +316,7 @@ function restoreState(){
 }
 
 function attachHandlers(){
-  // Click / Touch Unterstützung
+  // Sychronisierte Unterstützung für Click / Touch
   spinBtn.addEventListener('click', () => { if (!isSpinning) spin(); });
   spinBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (!isSpinning) spin(); }, {passive:false});
 }
@@ -325,6 +326,7 @@ function init(){
   segments = generateSegments();
   resizeCanvas();
   attachHandlers();
+  promptForName();
   restoreState();
 }
 
@@ -333,5 +335,3 @@ init();
 </script>
 </body>
 </html>
-
-
