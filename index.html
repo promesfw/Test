@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Punkte-Glücksrad</title>
+<style>
+  :root { --bg1:#fff8e7; --bg2:#fceabb; --btn1:#ff6f61; --btn2:#e53935; }
+  html,body { height:100%; margin:0; font-family: "Segoe UI", Roboto, Arial, sans-serif; background: radial-gradient(circle at center, var(--bg1), var(--bg2)); }
+  .wrap { max-width:520px; margin:18px auto; padding:12px; text-align:center; }
+  h1 { font-weight:600; color:#333; margin:8px 0 18px; }
+  #wheel-container { position:relative; display:inline-block; }
+  canvas { display:block; width: min(420px, 84vw); height: auto; border-radius:50%; box-shadow: inset 0 0 18px rgba(0,0,0,0.18), 0 6px 18px rgba(0,0,0,0.18); }
+  #pointer {
+    position:absolute; top:-15px; left:50%; transform:translateX(-50%) rotate(0);
+    width:0;height:0;border-left:20px solid transparent;border-right:20px solid transparent;border-top:34px solid #d32f2f;
+    filter: drop-shadow(0 3px 6px rgba(0,0,0,0.25));
+  }
+  #spin-btn {
+    margin-top:18px;
+    padding:12px 26px; font-size:18px; color:#fff; border:0; border-radius:999px;
+    background: linear-gradient(135deg, var(--btn1), var(--btn2)); box-shadow:0 6px 14px rgba(0,0,0,0.18);
+    cursor:pointer; touch-action:manipulation;
+  }
+  #spin-btn[disabled] { background:#bdbdbd; box-shadow:none; cursor:not-allowed; }
+  #result { margin-top:18px; display:inline-block; background:#fff; padding:14px 22px; border-radius:12px; box-shadow:0 6px 14px rgba(0,0,0,0.12); min-width:220px; }
+  #prize-points { font-size:36px; font-weight:700; margin-bottom:6px; color:#222; }
+  #prize-text { margin:0; color:#444; font-size:15px; }
+  @media (max-width:420px){ #prize-points { font-size:28px; } #spin-btn { font-size:16px; padding:10px 20px; } }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Punkte-Glücksrad</h1>
+
+    <div id="wheel-container">
+      <canvas id="wheel" aria-label="Glücksrad"></canvas>
+      <div id="pointer" aria-hidden="true"></div>
+    </div>
+
+    <div>
+      <button id="spin-btn" type="button">Drehen</button>
+    </div>
+
+    <div id="result">
+      <div id="prize-points">–</div>
+      <p id="prize-text">Noch nichts gedreht.</p>
+    </div>
+  </div>
+
+<script>
+/* Punkte-Glücksrad v3
+   - 12 Segmente: 1×+3, 2×+1, 9×0 (zufällig verteilt beim Laden)
+   - Responsive Canvas (devicePixelRatio)
+   - Zeitbasiertes Tweening + Wobble am Ende
+   - Mobile-friendly
+   - Nur minimal geändert: SHEETS_URL gesetzt + Username-Prompt
+*/
+
+const canvas = document.getElementById('wheel');
+const ctx = canvas.getContext('2d');
+const spinBtn = document.getElementById('spin-btn');
+const prizePointsEl = document.getElementById('prize-points');
+const prizeTextEl = document.getElementById('prize-text');
+
+let dpr = Math.max(1, window.devicePixelRatio || 1);
+let cssSize = 360; // initial fallback, will be replaced by resize()
+let center = { x: 0, y: 0 };
+let radius = 0;
+
+const SEG_COUNT = 12;
+let segments = []; // wird mit Punkten gefüllt
+const segAngle = 2 * Math.PI / SEG_COUNT;
+
+let angle = 0;        // aktuelle Rotation (radian)
+let isSpinning = false;
+let lastTargetIndex = null;
+
+// --- === HIER: deine Google Script URL (eingetragen) ===
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbz-dSyO4xSHn8_atUtnD0LV_YA1KjicmPNsr5-aQu8Im2JV_1rurjyO3wbp3eR83S-k/exec";
+
+// === Username-Abfrage (einmalig, minimal) ===
+if (!localStorage.getItem('gluecksrad_user')) {
+  try {
+    const name = prompt("Bitte gib deinen Namen ein (oder Abbrechen für 'anonymous'):");
+    if (name && name.trim() !== "") {
+      localStorage.setItem('gluecksrad_user', name.trim());
+    } else {
+      localStorage.setItem('gluecksrad_user', 'anonymous');
+    }
+  } catch(e) {
+    // falls prompt auf manchen Umgebungen blockiert wird
+    localStorage.setItem('gluecksrad_user', 'anonymous');
+  }
+}
+
+// --- Hilfsfunktionen ---
+function shuffleArray(a){
+  for(let i=a.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+}
+
+function generateSegments(){
+  // 1x +3, 2x +1, rest 0
+  const arr = Array(SEG_COUNT).fill(0);
+  let indices = Array.from({length:SEG_COUNT}, (_,i)=>i);
+  shuffleArray(indices);
+  arr[indices[0]] = 3;
+  arr[indices[1]] = 1;
+  arr[indices[2]] = 1;
+  return arr.map(p => ({ points: p }));
+}
+
+function normalizeAngle(a){
+  const mod = 2*Math.PI;
+  a = a % mod;
+  if (a < 0) a += mod;
+  return a;
+}
+
+function easeOutCubic(t){ return 1 - Math.pow(1-t,3); }
+
+// --- Canvas setup & responsive scaling ---
+function resizeCanvas(){
+  const computed = Math.min(420, Math.max(240, Math.round(window.innerWidth * 0.84)));
+  cssSize = computed;
+  canvas.style.width = cssSize + 'px';
+  canvas.style.height = cssSize + 'px';
+
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.round(cssSize * dpr);
+  canvas.height = Math.round(cssSize * dpr);
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  center.x = cssSize / 2;
+  center.y = cssSize / 2;
+  radius = cssSize / 2;
+
+  drawWheel();
+}
+
+window.addEventListener('resize', () => { resizeCanvas(); });
+
+// --- Zeichnen ---
+function drawWheel(){
+  ctx.clearRect(0, 0, cssSize, cssSize);
+
+  for(let i=0;i<SEG_COUNT;i++){
+    const start = angle + i * segAngle;
+    const grad = ctx.createRadialGradient(center.x - radius*0.2, center.y - radius*0.2, radius*0.05, center.x, center.y, radius);
+    const c1 = (i % 2 === 0) ? '#ffe259' : '#ffa751';
+    const c2 = (i % 2 === 0) ? '#ffa751' : '#ffe259';
+    grad.addColorStop(0, c1);
+    grad.addColorStop(1, c2);
+
+    ctx.beginPath();
+    ctx.moveTo(center.x, center.y);
+    ctx.arc(center.x, center.y, radius, start, start + segAngle);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1, cssSize * 0.006);
+    ctx.stroke();
+
+    // Punkteschrift in der Mitte des Segments
+    ctx.save();
+    ctx.translate(center.x, center.y);
+    ctx.rotate(start + segAngle / 2);
+    ctx.textAlign = 'right';
+    ctx.font = `bold ${Math.max(14, Math.round(cssSize*0.08))}px Arial`;
+    ctx.fillStyle = '#222';
+    ctx.fillText((segments[i].points>0? '+' : '') + segments[i].points, radius * 0.78, Math.round(cssSize*0.02));
+    ctx.restore();
+  }
+
+  // inner circle
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius*0.14, 0, 2*Math.PI);
+  ctx.fillStyle = '#fff7f2';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  ctx.stroke();
+}
+
+// --- Spin-Logik (time-based tween + wobble) ---
+function spin(){
+  if (isSpinning) return;
+  if (spinBtn.disabled) return;
+  isSpinning = true;
+  spinBtn.disabled = true;
+  spinBtn.textContent = 'Dreht...';
+
+  // Zufälliges Zielsegment
+  const targetIndex = Math.floor(Math.random() * SEG_COUNT);
+  lastTargetIndex = targetIndex;
+
+  // Berechne Zielwinkel so, dass die Mitte des Segments auf den Pointer (oben, angle = 3π/2) zeigt
+  const desiredMidAngle = (3*Math.PI/2) - (targetIndex * segAngle) - segAngle/2;
+  const currentNorm = normalizeAngle(angle);
+  const desiredNorm = normalizeAngle(desiredMidAngle);
+
+  // Delta im Bereich [0, 2π)
+  const delta = (desiredNorm - currentNorm + 2*Math.PI) % (2*Math.PI);
+
+  // Vollrotationen zufällig (mehr Dreh = besseres Feeling)
+  const fullRots = 4 + Math.floor(Math.random() * 3); // zwischen 4 und 6 volle Runden
+  const finalAngle = angle + fullRots * 2 * Math.PI + delta;
+
+  const duration = 3800 + Math.floor(Math.random() * 600); // ms
+
+  // Tweening
+  const startAngle = angle;
+  const startTime = performance.now();
+
+  function frame(now){
+    const elapsed = now - startTime;
+    const t = Math.min(1, elapsed / duration);
+    const eased = easeOutCubic(t);
+    angle = startAngle + (finalAngle - startAngle) * eased;
+    drawWheel();
+    if (t < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      // Wobble (abklingende Schwingung) vor dem Einrasten
+      startWobble(desiredMidAngle, () => {
+        // endgültig einrasten, Ergebnis anzeigen
+        angle = desiredMidAngle;
+        drawWheel();
+        onSpinComplete(targetIndex);
+      });
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+function startWobble(targetAngle, cb){
+  const wobbleDuration = 900; // ms
+  const amplitude = 0.12; // rad (max)
+  const frequency = 12;    // Schwingungen pro Sekunde ungefähr => beeinflusst Wahrnehmung
+  const t0 = performance.now();
+  function wob(now){
+    const elapsed = now - t0;
+    const t = elapsed / wobbleDuration;
+    if (t >= 1) {
+      cb();
+      return;
+    }
+    const decay = Math.exp(-4 * t); // decay von 1 -> 0
+    const w = amplitude * decay * Math.sin(frequency * 2 * Math.PI * t);
+    angle = targetAngle + w;
+    drawWheel();
+    requestAnimationFrame(wob);
+  }
+  requestAnimationFrame(wob);
+}
+
+// --- Ergebnis / UI / Sheets senden ---
+function onSpinComplete(index){
+  isSpinning = false;
+  const points = segments[index].points;
+  // Feedback Texte (genau wie gewünscht)
+  let feedback;
+  if (points === 0) feedback = "leider keine Punkte";
+  else if (points === 1) feedback = "Gratuliere! Du erhältst einen Punkt.";
+  else feedback = "Dein Glückstag - 3 Punkte!";
+
+  prizePointsEl.textContent = (points > 0 ? "+" : "") + points;
+  prizeTextEl.textContent = feedback;
+
+  // setze Button-Text & Sperre (und speichere Datum)
+  const today = new Date().toISOString().slice(0,10);
+  localStorage.setItem('gluecksrad_lastSpinDate', today);
+  localStorage.setItem('gluecksrad_lastPoints', points);
+  localStorage.setItem('gluecksrad_lastFeedback', feedback);
+
+  spinBtn.disabled = true;
+  spinBtn.textContent = "Heute gedreht";
+
+  // Ergebnis an Google Sheets senden (optional)
+  if (SHEETS_URL && SHEETS_URL.indexOf('HIER_DEINE') === -1) {
+    try {
+      fetch(SHEETS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: today,
+          points: points,
+          user: (localStorage.getItem('gluecksrad_user') || 'anonymous'),
+          angle: lastTargetIndex
+        })
+      }).catch(err => {
+        console.warn('Sheets POST failed:', err);
+      });
+    } catch(e){ console.warn('Sheets POST exception', e); }
+  }
+}
+
+// --- Initialisierung / Event-Handling ---
+function restoreState(){
+  const lastDate = localStorage.getItem('gluecksrad_lastSpinDate');
+  const today = new Date().toISOString().slice(0,10);
+  if (lastDate === today) {
+    spinBtn.disabled = true;
+    spinBtn.textContent = 'Heute gedreht';
+    const pts = localStorage.getItem('gluecksrad_lastPoints');
+    const fb = localStorage.getItem('gluecksrad_lastFeedback');
+    if (pts !== null) prizePointsEl.textContent = (Number(pts) > 0 ? "+" : "") + pts;
+    if (fb) prizeTextEl.textContent = fb;
+  }
+}
+
+function attachHandlers(){
+  // Click / Touch Unterstützung
+  spinBtn.addEventListener('click', () => { if (!isSpinning) spin(); });
+  spinBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (!isSpinning) spin(); }, {passive:false});
+}
+
+// --- Start ---
+function init(){
+  segments = generateSegments();
+  resizeCanvas();
+  attachHandlers();
+  restoreState();
+}
+
+init();
+
+</script>
+</body>
+</html>
