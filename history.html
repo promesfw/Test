@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Punkte-Verlauf</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 2em; background:#fafafa; }
+  h1 { margin-bottom:1em; }
+  table { border-collapse: collapse; width: 100%; max-width:500px; }
+  th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+  th { background: #eee; }
+  a { display:inline-block; margin-top:1em; }
+</style>
+</head>
+<body>
+  <h1>Punkte-Verlauf</h1>
+  <table id="history-table">
+    <thead>
+      <tr><th>Datum</th><th>Punkte</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <a href="index.html">⬅️ Zurück zum Glücksrad</a>
+
+<script>
+(function(){
+  const tbody = document.querySelector('#history-table tbody');
+  let history = JSON.parse(localStorage.getItem('gluecksrad_history') || "[]");
+  if(history.length === 0){
+    tbody.innerHTML = "<tr><td colspan='2'>Noch keine Drehungen gespeichert.</td></tr>";
+    return;
+  }
+  history.forEach(entry => {
+    const tr = document.createElement('tr');
+    const tdDate = document.createElement('td');
+    const tdPoints = document.createElement('td');
+    tdDate.textContent = entry.date;
+    tdPoints.textContent = entry.points;
+    tr.appendChild(tdDate);
+    tr.appendChild(tdPoints);
+    tbody.appendChild(tr);
+  });
+})();
+</script>
+</body>
+</html>
