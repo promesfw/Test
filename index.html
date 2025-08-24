@@ -71,7 +71,7 @@ let isSpinning = false;
 let lastTargetIndex = null;
 
 // Deine Google Apps Script URL:
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzMz-hiG44KLAAZvsRlJZiFiMNe1nqTapCNEniamcZ0sQ2sUi2CkdKEiNPcHQuE2qlf/exec";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbwCsRjs_7fGRCa5JZuOGH_ldftpPF-E_G8HacNUH7DV3TZemDiY8m1D95XtdZ__bTU3/exec";
 
 function shuffleArray(a){
   for(let i=a.length-1;i>0;i--){
@@ -208,8 +208,6 @@ function saveToHistory(date, points){
   localStorage.setItem('gluecksrad_history', JSON.stringify(history));
 }
 
-// Ersetzen Sie die onSpinComplete Funktion in Ihrer HTML-Datei:
-
 function onSpinComplete(index){
   isSpinning = false;
   const points = segments[index].points;
@@ -230,46 +228,97 @@ function onSpinComplete(index){
   spinBtn.disabled = true;
   spinBtn.textContent = "Heute gedreht";
 
-  // Verbesserte Methode zum Senden der Daten
+  // Daten an Google Sheets senden - CORS-freie Methode
   sendToGoogleSheets(today, points);
 }
 
 function sendToGoogleSheets(date, points) {
   if (!SHEETS_URL) return;
   
-  const data = {
+  const user = localStorage.getItem('gluecksrad_user') || 'anonymous';
+  
+  // Methode 1: Dynamisches Form-Element (funktioniert immer)
+  sendViaForm(date, points, user, lastTargetIndex);
+  
+  // Methode 2: Paralleler Versuch mit fetch no-cors
+  sendViaFetchNoCors(date, points, user, lastTargetIndex);
+}
+
+function sendViaForm(date, points, user, angle) {
+  console.log('Sende via dynamisches Form...');
+  
+  // Erstelle unsichtbares Form
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = SHEETS_URL;
+  form.target = '_blank'; // Öffnet in neuem Tab (kann sofort geschlossen werden)
+  form.style.display = 'none';
+  
+  // Erstelle Input-Felder
+  const fields = {
     date: date,
     points: points,
-    user: (localStorage.getItem('gluecksrad_user') || 'anonymous'),
-    angle: lastTargetIndex
+    user: user,
+    angle: angle
   };
   
-  console.log('Sende Daten:', data);
+  Object.keys(fields).forEach(key => {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = key;
+    input.value = fields[key];
+    form.appendChild(input);
+  });
   
-  // Mehrere Ansätze versuchen
+  // Form zum DOM hinzufügen und absenden
+  document.body.appendChild(form);
+  form.submit();
   
-  // Ansatz 1: Standard fetch mit CORS
-  fetch(SHEETS_URL, {
-    method: 'POST',
-    mode: 'cors',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data)
+  // Form nach kurzer Zeit entfernen
+  setTimeout(() => {
+    document.body.removeChild(form);
+  }, 1000);
+  
+  console.log('Form gesendet:', fields);
+}
+
+function sendViaFetchNoCors(date, points, user, angle) {
+  console.log('Sende via fetch no-cors...');
+  
+  // URL mit Parametern erstellen
+  const url = new URL(SHEETS_URL);
+  url.searchParams.append('date', date);
+  url.searchParams.append('points', points);
+  url.searchParams.append('user', user);
+  url.searchParams.append('angle', angle);
+  
+  fetch(url, {
+    method: 'GET', // Verwende GET statt POST
+    mode: 'no-cors'
   })
-  .then(response => {
-    console.log('Response Status:', response.status);
-    return response.text();
-  })
-  .then(result => {
-    console.log('Sheets response:', result);
+  .then(() => {
+    console.log('No-cors GET erfolgreich gesendet');
   })
   .catch(error => {
-    console.warn('Fetch Ansatz 1 fehlgeschlagen:', error);
-    
-    // Ansatz 2: Fallback mit form-encoded data
-    tryFormDataApproach(data);
+    console.warn('No-cors GET fehlgeschlagen:', error);
   });
+}
+
+// Alternative: Einfache Image-Pixel Methode (immer funktionierend)
+function sendViaImagePixel(date, points, user, angle) {
+  console.log('Sende via Image Pixel...');
+  
+  const img = new Image();
+  const url = new URL(SHEETS_URL);
+  url.searchParams.append('date', date);
+  url.searchParams.append('points', points);
+  url.searchParams.append('user', user);
+  url.searchParams.append('angle', angle);
+  url.searchParams.append('method', 'pixel');
+  
+  img.onload = () => console.log('Image pixel erfolgreich');
+  img.onerror = () => console.log('Image pixel gesendet (Fehler normal)');
+  img.src = url.toString();
 }
 
 function tryFormDataApproach(data) {
@@ -357,5 +406,6 @@ init();
 </script>
 </body>
 </html>
+
 
 
