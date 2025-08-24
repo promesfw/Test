@@ -71,7 +71,7 @@ let isSpinning = false;
 let lastTargetIndex = null;
 
 // Deine Google Apps Script URL:
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxI1AS1fGuiXYUt4xhiaHlk9Rr1USWGimUHS2zAAmTNknXcZWtYRRUCp9gPIw3S_QlL/exec";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzMz-hiG44KLAAZvsRlJZiFiMNe1nqTapCNEniamcZ0sQ2sUi2CkdKEiNPcHQuE2qlf/exec";
 
 function shuffleArray(a){
   for(let i=a.length-1;i>0;i--){
@@ -208,6 +208,8 @@ function saveToHistory(date, points){
   localStorage.setItem('gluecksrad_history', JSON.stringify(history));
 }
 
+// Ersetzen Sie die onSpinComplete Funktion in Ihrer HTML-Datei:
+
 function onSpinComplete(index){
   isSpinning = false;
   const points = segments[index].points;
@@ -215,34 +217,107 @@ function onSpinComplete(index){
   if (points === 0) feedback = "leider keine Punkte";
   else if (points === 1) feedback = "Gratuliere! Du erhältst einen Punkt.";
   else feedback = "Dein Glückstag - 3 Punkte!";
+  
   prizePointsEl.textContent = (points > 0 ? "+" : "") + points;
   prizeTextEl.textContent = feedback;
+  
   const today = new Date().toISOString().slice(0,10);
   localStorage.setItem('gluecksrad_lastSpinDate', today);
   localStorage.setItem('gluecksrad_lastPoints', points);
   localStorage.setItem('gluecksrad_lastFeedback', feedback);
   saveToHistory(today, points);
+  
   spinBtn.disabled = true;
   spinBtn.textContent = "Heute gedreht";
 
-  // Ergebnis an Google Sheets senden
-  if (SHEETS_URL) {
-    fetch(SHEETS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        date: today,
-        points: points,
-        user: (localStorage.getItem('gluecksrad_user') || 'anonymous'),
-        angle: lastTargetIndex
-      })
-    })
-    .then(r => r.text())
-    .then(txt => console.log("Sheets response:", txt))
-    .catch(err => console.warn("Sheets POST failed:", err));
-  }
+  // Verbesserte Methode zum Senden der Daten
+  sendToGoogleSheets(today, points);
 }
 
+function sendToGoogleSheets(date, points) {
+  if (!SHEETS_URL) return;
+  
+  const data = {
+    date: date,
+    points: points,
+    user: (localStorage.getItem('gluecksrad_user') || 'anonymous'),
+    angle: lastTargetIndex
+  };
+  
+  console.log('Sende Daten:', data);
+  
+  // Mehrere Ansätze versuchen
+  
+  // Ansatz 1: Standard fetch mit CORS
+  fetch(SHEETS_URL, {
+    method: 'POST',
+    mode: 'cors',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data)
+  })
+  .then(response => {
+    console.log('Response Status:', response.status);
+    return response.text();
+  })
+  .then(result => {
+    console.log('Sheets response:', result);
+  })
+  .catch(error => {
+    console.warn('Fetch Ansatz 1 fehlgeschlagen:', error);
+    
+    // Ansatz 2: Fallback mit form-encoded data
+    tryFormDataApproach(data);
+  });
+}
+
+function tryFormDataApproach(data) {
+  console.log('Versuche FormData Ansatz...');
+  
+  const formData = new FormData();
+  formData.append('data', JSON.stringify(data));
+  
+  fetch(SHEETS_URL, {
+    method: 'POST',
+    mode: 'no-cors', // Wichtig für Google Apps Script
+    body: formData
+  })
+  .then(() => {
+    console.log('FormData Ansatz erfolgreich (no-cors)');
+  })
+  .catch(error => {
+    console.warn('FormData Ansatz fehlgeschlagen:', error);
+    
+    // Ansatz 3: Fallback mit URL-encoded
+    tryUrlEncodedApproach(data);
+  });
+}
+
+function tryUrlEncodedApproach(data) {
+  console.log('Versuche URL-encoded Ansatz...');
+  
+  const params = new URLSearchParams();
+  params.append('date', data.date);
+  params.append('points', data.points);
+  params.append('user', data.user);
+  params.append('angle', data.angle);
+  
+  fetch(SHEETS_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params
+  })
+  .then(() => {
+    console.log('URL-encoded Ansatz erfolgreich (no-cors)');
+  })
+  .catch(error => {
+    console.warn('Alle Ansätze fehlgeschlagen:', error);
+  });
+}
 function restoreState(){
   const lastDate = localStorage.getItem('gluecksrad_lastSpinDate');
   const today = new Date().toISOString().slice(0,10);
@@ -282,4 +357,5 @@ init();
 </script>
 </body>
 </html>
+
 
