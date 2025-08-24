@@ -70,7 +70,8 @@ let angle = 0;
 let isSpinning = false;
 let lastTargetIndex = null;
 
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzuBCI_YbzxonQvSM3sywv5pJdwSQhUhMUE7oYPFsWuCODSlwHxKqSBREKZtdLEHio9/exec"; // Falls du Google Sheets einbinden willst
+// Deine Google Apps Script URL:
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzuBCI_YbzxonQvSM3sywv5pJdwSQhUhMUE7oYPFsWuCODSlwHxKqSBREKZtdLEHio9/exec";
 
 function shuffleArray(a){
   for(let i=a.length-1;i>0;i--){
@@ -223,6 +224,23 @@ function onSpinComplete(index){
   saveToHistory(today, points);
   spinBtn.disabled = true;
   spinBtn.textContent = "Heute gedreht";
+
+  // Ergebnis an Google Sheets senden
+  if (SHEETS_URL) {
+    fetch(SHEETS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        date: today,
+        points: points,
+        user: (localStorage.getItem('gluecksrad_user') || 'anonymous'),
+        angle: lastTargetIndex
+      })
+    })
+    .then(r => r.text())
+    .then(txt => console.log("Sheets response:", txt))
+    .catch(err => console.warn("Sheets POST failed:", err));
+  }
 }
 
 function restoreState(){
@@ -264,4 +282,3 @@ init();
 </script>
 </body>
 </html>
-
