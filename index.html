@@ -46,17 +46,11 @@
       <div id="prize-points">–</div>
       <p id="prize-text">Noch nichts gedreht.</p>
     </div>
+
+    <p><a href="history.html">➜ Punkte-Verlauf ansehen</a></p>
   </div>
 
 <script>
-/* Punkte-Glücksrad v3
-   - 12 Segmente: 1×+3, 2×+1, 9×0 (zufällig verteilt beim Laden)
-   - Responsive Canvas (devicePixelRatio)
-   - Zeitbasiertes Tweening + Wobble am Ende
-   - Mobile-friendly
-   - Setze HIER_DEINE_GOOGLE_SCRIPT_URL ein wenn du die Daten an Sheets senden willst
-*/
-
 const canvas = document.getElementById('wheel');
 const ctx = canvas.getContext('2d');
 const spinBtn = document.getElementById('spin-btn');
@@ -64,22 +58,20 @@ const prizePointsEl = document.getElementById('prize-points');
 const prizeTextEl = document.getElementById('prize-text');
 
 let dpr = Math.max(1, window.devicePixelRatio || 1);
-let cssSize = 360; // initial fallback, will be replaced by resize()
+let cssSize = 360;
 let center = { x: 0, y: 0 };
 let radius = 0;
 
 const SEG_COUNT = 12;
-let segments = []; // wird mit Punkten gefüllt
+let segments = [];
 const segAngle = 2 * Math.PI / SEG_COUNT;
 
-let angle = 0;        // aktuelle Rotation (radian)
+let angle = 0;
 let isSpinning = false;
 let lastTargetIndex = null;
 
-// Google Script URL - bitte hier deine Webapp-URL eintragen:
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzU_5SWkSBrT31dXMgVNhrOf5Rbh0hSROXNey4tWLy0KT4YNWuOqUIp9shAMkn2sgyH/exec"; // leave as placeholder or fill
+const SHEETS_URL = ""; // Falls du Google Sheets einbinden willst
 
-// --- Hilfsfunktionen ---
 function shuffleArray(a){
   for(let i=a.length-1;i>0;i--){
     const j=Math.floor(Math.random()*(i+1));
@@ -88,15 +80,12 @@ function shuffleArray(a){
 }
 
 function generateSegments(){
-  // 1x +3, 2x +1, rest 0
   const arr = Array(SEG_COUNT).fill(0);
-  // Set +3
   let indices = Array.from({length:SEG_COUNT}, (_,i)=>i);
   shuffleArray(indices);
   arr[indices[0]] = 3;
   arr[indices[1]] = 1;
   arr[indices[2]] = 1;
-  // rest 0 already
   return arr.map(p => ({ points: p }));
 }
 
@@ -109,43 +98,32 @@ function normalizeAngle(a){
 
 function easeOutCubic(t){ return 1 - Math.pow(1-t,3); }
 
-// --- Canvas setup & responsive scaling ---
 function resizeCanvas(){
-  // css size = computed width of canvas (responsive)
   const computed = Math.min(420, Math.max(240, Math.round(window.innerWidth * 0.84)));
   cssSize = computed;
   canvas.style.width = cssSize + 'px';
   canvas.style.height = cssSize + 'px';
-
   dpr = Math.max(1, window.devicePixelRatio || 1);
   canvas.width = Math.round(cssSize * dpr);
   canvas.height = Math.round(cssSize * dpr);
-
-  // Set transform so we can draw in CSS pixels
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
   center.x = cssSize / 2;
   center.y = cssSize / 2;
   radius = cssSize / 2;
-
   drawWheel();
 }
 
 window.addEventListener('resize', () => { resizeCanvas(); });
 
-// --- Zeichnen ---
 function drawWheel(){
   ctx.clearRect(0, 0, cssSize, cssSize);
-
   for(let i=0;i<SEG_COUNT;i++){
     const start = angle + i * segAngle;
-    // radial gradient
     const grad = ctx.createRadialGradient(center.x - radius*0.2, center.y - radius*0.2, radius*0.05, center.x, center.y, radius);
     const c1 = (i % 2 === 0) ? '#ffe259' : '#ffa751';
     const c2 = (i % 2 === 0) ? '#ffa751' : '#ffe259';
     grad.addColorStop(0, c1);
     grad.addColorStop(1, c2);
-
     ctx.beginPath();
     ctx.moveTo(center.x, center.y);
     ctx.arc(center.x, center.y, radius, start, start + segAngle);
@@ -155,8 +133,6 @@ function drawWheel(){
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = Math.max(1, cssSize * 0.006);
     ctx.stroke();
-
-    // Punkteschrift in der Mitte des Segments
     ctx.save();
     ctx.translate(center.x, center.y);
     ctx.rotate(start + segAngle / 2);
@@ -166,8 +142,6 @@ function drawWheel(){
     ctx.fillText((segments[i].points>0? '+' : '') + segments[i].points, radius * 0.78, Math.round(cssSize*0.02));
     ctx.restore();
   }
-
-  // Optional: inner circle to create "mechanical" look
   ctx.beginPath();
   ctx.arc(center.x, center.y, radius*0.14, 0, 2*Math.PI);
   ctx.fillStyle = '#fff7f2';
@@ -176,70 +150,49 @@ function drawWheel(){
   ctx.stroke();
 }
 
-// --- Spin-Logik (time-based tween + wobble) ---
 function spin(){
   if (isSpinning) return;
   if (spinBtn.disabled) return;
   isSpinning = true;
   spinBtn.disabled = true;
   spinBtn.textContent = 'Dreht...';
-
-  // Zufälliges Zielsegment
   const targetIndex = Math.floor(Math.random() * SEG_COUNT);
   lastTargetIndex = targetIndex;
-
-  // Berechne Zielwinkel so, dass die Mitte des Segments auf den Pointer (oben, angle = 3π/2) zeigt
   const desiredMidAngle = (3*Math.PI/2) - (targetIndex * segAngle) - segAngle/2;
   const currentNorm = normalizeAngle(angle);
   const desiredNorm = normalizeAngle(desiredMidAngle);
-
-  // Delta im Bereich [0, 2π)
   const delta = (desiredNorm - currentNorm + 2*Math.PI) % (2*Math.PI);
-
-  // Vollrotationen zufällig (mehr Dreh = besseres Feeling)
-  const fullRots = 4 + Math.floor(Math.random() * 3); // zwischen 4 und 6 volle Runden
+  const fullRots = 4 + Math.floor(Math.random() * 3);
   const finalAngle = angle + fullRots * 2 * Math.PI + delta;
-
-  const duration = 3800 + Math.floor(Math.random() * 600); // ms
-
-  // Tweening
+  const duration = 3800 + Math.floor(Math.random() * 600);
   const startAngle = angle;
   const startTime = performance.now();
-
   function frame(now){
     const elapsed = now - startTime;
     const t = Math.min(1, elapsed / duration);
     const eased = easeOutCubic(t);
     angle = startAngle + (finalAngle - startAngle) * eased;
     drawWheel();
-    if (t < 1) {
-      requestAnimationFrame(frame);
-    } else {
-      // Wobble (abklingende Schwingung) vor dem Einrasten
-      startWobble(desiredMidAngle, () => {
-        // endgültig einrasten, Ergebnis anzeigen
-        angle = desiredMidAngle;
-        drawWheel();
-        onSpinComplete(targetIndex);
-      });
-    }
+    if (t < 1) requestAnimationFrame(frame);
+    else startWobble(desiredMidAngle, () => {
+      angle = desiredMidAngle;
+      drawWheel();
+      onSpinComplete(targetIndex);
+    });
   }
   requestAnimationFrame(frame);
 }
 
 function startWobble(targetAngle, cb){
-  const wobbleDuration = 900; // ms
-  const amplitude = 0.12; // rad (max)
-  const frequency = 12;    // Schwingungen pro Sekunde ungefähr => beeinflusst Wahrnehmung
+  const wobbleDuration = 900;
+  const amplitude = 0.12;
+  const frequency = 12;
   const t0 = performance.now();
   function wob(now){
     const elapsed = now - t0;
     const t = elapsed / wobbleDuration;
-    if (t >= 1) {
-      cb();
-      return;
-    }
-    const decay = Math.exp(-4 * t); // decay von 1 -> 0
+    if (t >= 1) { cb(); return; }
+    const decay = Math.exp(-4 * t);
     const w = amplitude * decay * Math.sin(frequency * 2 * Math.PI * t);
     angle = targetAngle + w;
     drawWheel();
@@ -248,58 +201,28 @@ function startWobble(targetAngle, cb){
   requestAnimationFrame(wob);
 }
 
-// --- Ergebnis / UI / Sheets senden ---
+function saveToHistory(date, points){
+  let history = JSON.parse(localStorage.getItem('gluecksrad_history') || "[]");
+  history.push({ date, points });
+  localStorage.setItem('gluecksrad_history', JSON.stringify(history));
+}
+
 function onSpinComplete(index){
   isSpinning = false;
   const points = segments[index].points;
-  // Feedback Texte (genau wie gewünscht)
   let feedback;
   if (points === 0) feedback = "leider keine Punkte";
   else if (points === 1) feedback = "Gratuliere! Du erhältst einen Punkt.";
   else feedback = "Dein Glückstag - 3 Punkte!";
-
   prizePointsEl.textContent = (points > 0 ? "+" : "") + points;
   prizeTextEl.textContent = feedback;
-
-  // setze Button-Text & Sperre (und speichere Datum)
   const today = new Date().toISOString().slice(0,10);
   localStorage.setItem('gluecksrad_lastSpinDate', today);
   localStorage.setItem('gluecksrad_lastPoints', points);
   localStorage.setItem('gluecksrad_lastFeedback', feedback);
-
+  saveToHistory(today, points);
   spinBtn.disabled = true;
   spinBtn.textContent = "Heute gedreht";
-
-  // Ergebnis an Google Sheets senden (optional)
-  if (SHEETS_URL && SHEETS_URL.indexOf('HIER_DEINE') === -1) {
-    try {
-      fetch(SHEETS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: today,
-          points: points,
-          user: (localStorage.getItem('gluecksrad_user') || 'anonymous'),
-          angle: lastTargetIndex
-        })
-      }).catch(err => {
-        // Fehler ignorieren / optional logging
-        console.warn('Sheets POST failed:', err);
-      });
-    } catch(e){ console.warn('Sheets POST exception', e); }
-  }
-}
-
-// --- Initialisierung / Event-Handling ---
-function promptForName() {
-  const storedUser = localStorage.getItem('gluecksrad_user');
-  if (!storedUser) {
-    const userName = prompt('Bitte geben Sie Ihren Namen ein, um Ihre Punkte zu speichern:');
-    if (userName) {
-      localStorage.setItem('gluecksrad_user', userName);
-      alert('Vielen Dank, ' + userName + '! Ihr Name wurde gespeichert.');
-    }
-  }
 }
 
 function restoreState(){
@@ -315,23 +238,29 @@ function restoreState(){
   }
 }
 
+function askUserNameOnce(){
+  let user = localStorage.getItem('gluecksrad_user');
+  if (!user) {
+    user = prompt("Bitte gib deinen Namen für die Studie ein:");
+    if (!user || user.trim() === "") user = "Teilnehmer";
+    localStorage.setItem('gluecksrad_user', user.trim());
+  }
+}
+
 function attachHandlers(){
-  // Sychronisierte Unterstützung für Click / Touch
   spinBtn.addEventListener('click', () => { if (!isSpinning) spin(); });
   spinBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (!isSpinning) spin(); }, {passive:false});
 }
 
-// --- Start ---
 function init(){
+  askUserNameOnce();
   segments = generateSegments();
   resizeCanvas();
   attachHandlers();
-  promptForName();
   restoreState();
 }
 
 init();
-
 </script>
 </body>
 </html>
